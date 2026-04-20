@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timeouts em APIs: o que são e como funcionam</title>
+<meta name="description" content="Entenda o que é timeout em APIs, tipos, configuração em Node, Python, Go e boas práticas para evitar travamentos e perder requisições.">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<article>
+<h1>Timeouts em APIs: o que são e como funcionam</h1>
+<p><strong>Meta Description:</strong> Entenda o que é timeout em APIs, tipos, configuração em Node, Python, Go e boas práticas para evitar travamentos e perder requisições.
+<strong>Slug:</strong> timeouts-em-apis-o-que-sao-como-funcionam
+<strong>Palavra-chave Principal:</strong> timeout em APIs
+<strong>Palavras-chave Secundárias:</strong> configurar timeout, tipos de timeout, connection timeout, read timeout
+<strong>LSI Keywords:</strong> retry, circuit breaker, exponential backoff, HTTP client, socket timeout, deadline, latência de rede</p>
+<hr />
+<p>Você sobe uma feature nova. Roda tudo em homologação, passa nos testes e coloca em produção. Duas horas depois, o time de atendimento começa a reclamar. A tela de cadastro trava, o spinner gira eternamente e o usuário fecha a aba. Você abre os logs e encontra dezenas de requests pendurados na chamada à API de consulta de CPF. Nenhum erro explícito, nenhuma exceção. Apenas requisições vivas, consumindo threads, memória e a sua paciência.</p>
+<p>Quem trabalha com integrações já passou por isso. O culpado quase sempre é a ausência (ou a configuração errada) de <strong>timeout em APIs</strong>. Quando o cliente HTTP não sabe quando desistir, qualquer instabilidade da rede vira problema sério no seu sistema. E o pior: você só descobre quando já está em produção.</p>
+<p>Este guia cobre o assunto do início ao fim. Primeiro, explica o que é um timeout e por que ele existe. Depois, mostra os cinco tipos que todo desenvolvedor deveria conhecer. Em seguida, você vê como configurar timeout em APIs usando as principais linguagens e bibliotecas do mercado. Por fim, abordamos estratégias como retry com exponential backoff, circuit breaker e os erros que aparecem em code review quase toda semana. A ideia é que, ao terminar a leitura, você saiba onde e como aplicar timeout em APIs nos seus projetos, seja em integrações internas ou em consultas a serviços externos como CPF, CNPJ e CEP.</p>
+<hr />
+<h2>O que é um timeout e por que ele existe</h2>
+<p>Um timeout é o tempo máximo que seu código espera por uma resposta antes de desistir e lançar um erro. Parece simples. Mas a ausência desse limite é uma das falhas mais caras que um sistema pode ter.</p>
+<h3>A origem do problema: redes não são confiáveis</h3>
+<p>Quando você faz uma chamada HTTP, está assumindo que o outro lado vai responder. Só que a internet não dá essa garantia. O servidor pode estar sobrecarregado. O link pode cair no meio do caminho. O DNS pode demorar. Um firewall pode bloquear silenciosamente. Sem um timeout configurado, seu código fica esperando indefinidamente e consome recursos que poderiam servir outras requisições.</p>
+<p>Imagine uma fila de banco com um caixa travado atendendo um único cliente por duas horas. Enquanto isso, dezenas de pessoas esperam em pé. É assim que seu servidor se comporta quando falta timeout em APIs: uma thread presa por requisição travada, e novas requests sem lugar para rodar.</p>
+<h3>O custo real da falta de timeout</h3>
+<p>Além da experiência do usuário, o impacto técnico é severo. Cada conexão aberta consome memória, sockets e (dependendo da arquitetura) threads. Em servidores Node.js, você entope o event loop. Em aplicações Python com Gunicorn ou uWSGI, os workers ficam presos. Em Go, goroutines vazam silenciosamente.</p>
+<p>Por outro lado, configurar timeout em APIs não resolve apenas performance. Também protege contra ataques simples de slowloris, garante previsibilidade nos tempos de resposta e facilita debug quando algo dá errado. Um erro explícito é sempre melhor do que um silêncio prolongado.</p>
+<blockquote>
+<p>💡 <strong>DICA:</strong> Nunca confie no timeout padrão da biblioteca HTTP. O Python <code>requests</code>, por exemplo, não tem timeout por padrão — ele espera para sempre. Sempre defina o valor de forma explícita, mesmo que seja um número generoso como 30 segundos.</p>
+</blockquote>
+<h3>Quem decide o valor ideal?</h3>
+<p>Não existe número mágico. O valor certo depende do tipo de operação. Uma consulta de CEP costuma responder em menos de 500ms. Uma consulta de CPF que valida em múltiplas bases pode levar 3 a 5 segundos. Um relatório gerado sob demanda pode legitimamente demorar 30 segundos.</p>
+<p>A regra prática é observar os percentis p95 e p99 em produção, adicionar uma margem de segurança entre 20% e 50% e usar esse número. Se você ainda não tem observabilidade, comece com valores conservadores e ajuste depois. Melhor errar para cima no começo do que derrubar requisições legítimas.</p>
+<h3>Timeout visto pelo usuário final</h3>
+<p>Há outro aspecto que quase ninguém considera na hora de escolher o valor. O tempo que o usuário aceita esperar antes de abandonar a tarefa. Estudos clássicos de usabilidade mostram que acima de 3 segundos a taxa de abandono cresce de forma quase exponencial. Se a sua operação depende de três chamadas em sequência, cada uma com timeout de 5 segundos, no pior caso o usuário espera 15 segundos. Nesse ponto, ele já fechou a aba.</p>
+<p>A saída é somar os timeouts ao longo da cadeia e comparar com o tempo tolerável na ponta. Se o total ultrapassa o que o usuário aguenta, algo precisa mudar: paralelizar chamadas, cachear respostas frequentes ou aceitar que certas rotas devem responder rápido ou falhar rápido.</p>
+<hr />
+<h2>Tipos de timeout em APIs que você precisa conhecer</h2>
+<p>Falar apenas em "timeout" é impreciso. Existem cinco tipos distintos, e cada um controla uma fase da comunicação HTTP. Entender a diferença entre eles separa quem lê documentação de quem aplica direito.</p>
+<h3>Connection timeout</h3>
+<p>O connection timeout controla quanto tempo o cliente espera para estabelecer a conexão TCP com o servidor. Inclui resolução DNS, handshake TCP e, em HTTPS, a negociação TLS. Se o servidor estiver fora do ar ou inacessível, é esse timeout que dispara.</p>
+<p>Valores típicos ficam entre 1 e 5 segundos. Acima disso, provavelmente há algum problema estrutural que não vai melhorar com paciência.</p>
+<h3>Read timeout (ou socket timeout)</h3>
+<p>Depois da conexão estabelecida, o read timeout controla quanto tempo o cliente espera por dados chegando do servidor. É o cronômetro que zera a cada byte recebido. Se o servidor parar de enviar dados no meio da resposta, é aqui que você detecta.</p>
+<p>Esse é o timeout mais importante na prática. Ele protege contra servidores lentos que aceitam a conexão mas travam durante o processamento.</p>
+<h3>Write timeout</h3>
+<p>Menos comentado, mas igualmente relevante. O write timeout limita o tempo que o cliente espera para enviar dados ao servidor. Útil quando você envia payloads grandes (upload de arquivos, batches) e o servidor pode estar com o buffer cheio.</p>
+<h3>Request timeout (ou total timeout)</h3>
+<p>O request timeout limita o tempo total da operação, incluindo conexão, envio, processamento no servidor e recebimento da resposta. É um "guarda-chuva" que engloba os outros. Funciona como rede de proteção final: mesmo que cada etapa individual esteja dentro do seu limite, o total não pode ultrapassar X.</p>
+<h3>Idle timeout</h3>
+<p>Relevante em conexões keep-alive. O idle timeout define por quanto tempo uma conexão pode ficar ociosa antes de ser fechada. Importa para connection pools. Se você reutiliza conexões, elas precisam estar vivas quando você precisar delas, mas não podem ficar abertas para sempre consumindo file descriptors.</p>
+<h3>Tabela comparativa dos tipos de timeout</h3>
+<table>
+<thead>
+<tr>
+<th>Tipo de Timeout</th>
+<th>O que controla</th>
+<th>Valor típico</th>
+<th>Erro quando dispara</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Connection</td>
+<td>Tempo para estabelecer conexão TCP/TLS</td>
+<td>1-5s</td>
+<td>ConnectTimeoutError</td>
+</tr>
+<tr>
+<td>Read</td>
+<td>Tempo entre pacotes recebidos</td>
+<td>5-30s</td>
+<td>ReadTimeoutError</td>
+</tr>
+<tr>
+<td>Write</td>
+<td>Tempo para enviar dados ao servidor</td>
+<td>5-30s</td>
+<td>WriteTimeoutError</td>
+</tr>
+<tr>
+<td>Request (total)</td>
+<td>Duração total da operação</td>
+<td>10-60s</td>
+<td>RequestTimeoutError</td>
+</tr>
+<tr>
+<td>Idle</td>
+<td>Tempo ocioso antes de fechar conexão keep-alive</td>
+<td>30-120s</td>
+<td>Conexão fechada silenciosamente</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>⚠️ <strong>ATENÇÃO:</strong> Muita biblioteca mistura read timeout e request timeout, chamando ambos de "timeout". Leia a documentação antes de assumir que seu <code>timeout=5</code> cobre todas as etapas. Em caso de dúvida, configure os dois separadamente.</p>
+</blockquote>
+<hr />
+<h2>Como configurar timeout em APIs nas principais linguagens</h2>
+<p>Chegou a parte prática. Abaixo, exemplos reais de como configurar timeout em APIs usando as bibliotecas mais comuns em cada ecossistema. Todos os exemplos assumem uma consulta simulada à Hub do Desenvolvedor para validar um CPF.</p>
+<h3>JavaScript com fetch (nativo)</h3>
+<p>O fetch nativo do navegador e do Node 18+ não tem parâmetro de timeout direto. A solução canônica é usar AbortController:</p>
+<pre><code class="language-javascript">async function consultarCPF(cpf) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() =&gt; controller.abort(), 5000);
+
+  try {
+    const response = await fetch(`https://api.hubdodesenvolvedor.com.br/v2/cpf?cpf=${cpf}&amp;token=SEU_TOKEN`, {
+      signal: controller.signal,
+    });
+    return await response.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Consulta de CPF excedeu 5 segundos');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+</code></pre>
+<p>O padrão é verboso e muita gente abstrai num wrapper. Ainda assim, AbortController é a forma oficial e vale conhecer.</p>
+<h3>JavaScript com axios</h3>
+<p>Axios simplifica bastante. Mas atenção: o parâmetro <code>timeout</code> do axios é na verdade um read timeout, não um request timeout total.</p>
+<pre><code class="language-javascript">import axios from 'axios';
+
+const hubClient = axios.create({
+  baseURL: 'https://api.hubdodesenvolvedor.com.br',
+  timeout: 5000, // read timeout
+  headers: { 'Content-Type': 'application/json' },
+});
+
+async function consultarCNPJ(cnpj) {
+  try {
+    const { data } = await hubClient.get(`/v2/cnpj?cnpj=${cnpj}&amp;token=SEU_TOKEN`);
+    return data;
+  } catch (err) {
+    if (err.code === 'ECONNABORTED') {
+      console.error('Timeout na consulta de CNPJ');
+    }
+    throw err;
+  }
+}
+</code></pre>
+<h3>Python com requests</h3>
+<p>O <code>requests</code> aceita um timeout como tupla <code>(connect_timeout, read_timeout)</code>:</p>
+<pre><code class="language-python">import requests
+from requests.exceptions import ConnectTimeout, ReadTimeout
+
+def consultar_cep(cep: str) -&gt; dict:
+    try:
+        response = requests.get(
+            f&quot;https://api.hubdodesenvolvedor.com.br/v2/cep&quot;,
+            params={&quot;cep&quot;: cep, &quot;token&quot;: &quot;SEU_TOKEN&quot;},
+            timeout=(3, 10),  # 3s para conectar, 10s para ler
+        )
+        response.raise_for_status()
+        return response.json()
+    except ConnectTimeout:
+        raise RuntimeError(&quot;Hub do Desenvolvedor fora do ar?&quot;)
+    except ReadTimeout:
+        raise RuntimeError(&quot;Servidor aceitou mas demorou para responder&quot;)
+</code></pre>
+<h3>Python com httpx (async-friendly)</h3>
+<p>O httpx é mais moderno e permite controle granular:</p>
+<pre><code class="language-python">import httpx
+
+async def consultar_cpf_async(cpf: str) -&gt; dict:
+    timeout = httpx.Timeout(
+        connect=3.0,
+        read=10.0,
+        write=5.0,
+        pool=2.0,
+    )
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.get(
+            &quot;https://api.hubdodesenvolvedor.com.br/v2/cpf&quot;,
+            params={&quot;cpf&quot;: cpf, &quot;token&quot;: &quot;SEU_TOKEN&quot;},
+        )
+        return response.json()
+</code></pre>
+<h3>Go com http.Client</h3>
+<p>Go é notoriamente explícito sobre timeouts. O padrão recomendado:</p>
+<pre><code class="language-go">package main
+
+import (
+    &quot;context&quot;
+    &quot;encoding/json&quot;
+    &quot;net&quot;
+    &quot;net/http&quot;
+    &quot;time&quot;
+)
+
+var hubClient = &amp;http.Client{
+    Timeout: 15 * time.Second, // total request timeout
+    Transport: &amp;http.Transport{
+        DialContext: (&amp;net.Dialer{
+            Timeout:   3 * time.Second,
+            KeepAlive: 30 * time.Second,
+        }).DialContext,
+        TLSHandshakeTimeout:   3 * time.Second,
+        ResponseHeaderTimeout: 5 * time.Second,
+        IdleConnTimeout:       90 * time.Second,
+    },
+}
+
+func ConsultarCNPJ(ctx context.Context, cnpj string) (map[string]any, error) {
+    ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+    defer cancel()
+
+    req, err := http.NewRequestWithContext(ctx, &quot;GET&quot;,
+        &quot;https://api.hubdodesenvolvedor.com.br/v2/cnpj?cnpj=&quot;+cnpj+&quot;&amp;token=SEU_TOKEN&quot;, nil)
+    if err != nil {
+        return nil, err
+    }
+
+    resp, err := hubClient.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    var data map[string]any
+    return data, json.NewDecoder(resp.Body).Decode(&amp;data)
+}
+</code></pre>
+<p>Em Go, a combinação de <code>http.Client.Timeout</code> com <code>context.WithTimeout</code> é a forma mais segura. O primeiro garante o limite total. O segundo permite cancelamento cooperativo ao longo da cadeia de chamadas.</p>
+<h3>Tabela comparativa das bibliotecas</h3>
+<table>
+<thead>
+<tr>
+<th>Linguagem/Lib</th>
+<th>Connection</th>
+<th>Read</th>
+<th>Write</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fetch (nativo)</td>
+<td>Não configurável diretamente</td>
+<td>Via AbortController</td>
+<td>Via AbortController</td>
+<td>Via AbortController</td>
+</tr>
+<tr>
+<td>axios</td>
+<td>Não nativo (via agent)</td>
+<td><code>timeout</code></td>
+<td>Não separado</td>
+<td>Não nativo</td>
+</tr>
+<tr>
+<td>requests (Python)</td>
+<td>tupla <code>(connect, read)</code></td>
+<td>tupla <code>(connect, read)</code></td>
+<td>Não separado</td>
+<td>Não nativo</td>
+</tr>
+<tr>
+<td>httpx (Python)</td>
+<td><code>Timeout(connect=)</code></td>
+<td><code>Timeout(read=)</code></td>
+<td><code>Timeout(write=)</code></td>
+<td><code>Timeout(pool=)</code></td>
+</tr>
+<tr>
+<td>Go http.Client</td>
+<td><code>Dialer.Timeout</code></td>
+<td><code>ResponseHeaderTimeout</code></td>
+<td>Via Context</td>
+<td><code>Client.Timeout</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>🚀 <strong>OPORTUNIDADE:</strong> Precisa consultar CPF, CNPJ ou CEP em escala com tempo de resposta previsível? Conheça a <a href="https://hubdodesenvolvedor.com.br">Hub do Desenvolvedor</a>. Nossos endpoints de CPF, CNPJ e CEP facilitam configurar timeouts agressivos sem quebrar sua aplicação.</p>
+</blockquote>
+<hr />
+<h2>Estratégias avançadas: retry, circuit breaker e backoff</h2>
+<p>Configurar timeout em APIs é o primeiro passo. Mas o que fazer quando o timeout dispara? Desistir na primeira falha é pouco resiliente. Tentar infinitamente é pior. Existe um meio-termo e ele envolve três padrões que todo desenvolvedor sênior domina.</p>
+<h3>Retry com limite</h3>
+<p>Nem todo timeout significa falha permanente. Um pico momentâneo de latência, um deploy rolling no servidor, uma instabilidade de rede — situações comuns que se resolvem sozinhas em segundos. Retry com limite cobre esses casos.</p>
+<p>Regras básicas:</p>
+<ul>
+<li>Retry apenas em métodos idempotentes (GET, PUT, DELETE). POST exige cuidado adicional.</li>
+<li>Máximo de 3 a 5 tentativas.</li>
+<li>Não faça retry em erros 4xx (exceto 408 e 429).</li>
+<li>Registre cada tentativa para observabilidade.</li>
+</ul>
+<h3>Exponential backoff com jitter</h3>
+<p>Retry imediato é quase sempre errado. Se o servidor está sobrecarregado, retries simultâneos pioram o problema. A solução é esperar cada vez mais entre tentativas, com um componente aleatório para evitar sincronização de clientes:</p>
+<pre><code class="language-python">import random
+import time
+import httpx
+
+def consultar_com_retry(url: str, max_tentativas: int = 4) -&gt; dict:
+    for tentativa in range(max_tentativas):
+        try:
+            response = httpx.get(url, timeout=5.0)
+            response.raise_for_status()
+            return response.json()
+        except (httpx.TimeoutException, httpx.HTTPStatusError) as err:
+            if tentativa == max_tentativas - 1:
+                raise
+
+            # Exponential backoff: 1s, 2s, 4s, 8s
+            # Jitter: +/- 30% aleatório
+            base = 2 ** tentativa
+            jitter = base * random.uniform(-0.3, 0.3)
+            sleep_time = base + jitter
+            time.sleep(sleep_time)
+</code></pre>
+<p>O jitter é essencial quando milhares de clientes falham ao mesmo tempo. Sem ele, todos voltam simultaneamente e reproduzem a sobrecarga original.</p>
+<h3>Circuit breaker</h3>
+<p>Quando um serviço está claramente fora do ar, insistir com retries é perda de tempo e recursos. O circuit breaker monitora a taxa de falhas e, ao passar de um limite, para de tentar por um período definido. Três estados:</p>
+<ol>
+<li><strong>Closed (fechado):</strong> requisições passam normalmente.</li>
+<li><strong>Open (aberto):</strong> requisições falham imediatamente, sem tocar no serviço externo.</li>
+<li><strong>Half-open (meio-aberto):</strong> após um cooldown, permite algumas requisições de teste. Se passarem, volta para closed. Se falharem, volta para open.</li>
+</ol>
+<p>Em Node.js, bibliotecas como <code>opossum</code> implementam isso prontinho. Em Python, <code>pybreaker</code>. Em Go, <code>sony/gobreaker</code>.</p>
+<pre><code class="language-javascript">import CircuitBreaker from 'opossum';
+
+const options = {
+  timeout: 5000,               // read timeout por request
+  errorThresholdPercentage: 50, // abre o circuito com 50% de falhas
+  resetTimeout: 30000,         // aguarda 30s antes de tentar de novo
+};
+
+const breaker = new CircuitBreaker(consultarCPF, options);
+
+breaker.fallback(() =&gt; ({ erro: 'Serviço temporariamente indisponível' }));
+breaker.on('open', () =&gt; console.warn('Circuit breaker aberto'));
+
+// Uso
+const resultado = await breaker.fire('12345678900');
+</code></pre>
+<h3>Deadline propagation</h3>
+<p>Em arquiteturas distribuídas, cada serviço que recebe uma request precisa saber quanto tempo ainda resta no orçamento total. Se o cliente original tem 10 segundos e o primeiro serviço gasta 3, o próximo deveria trabalhar com no máximo 7 segundos (menos ainda, para dar folga).</p>
+<p>Em Go, o <code>context.Context</code> cuida disso automaticamente. Em outras linguagens, você propaga manualmente via header <code>X-Deadline</code> ou <code>X-Request-Timeout</code>.</p>
+<blockquote>
+<p>🔍 <strong>INSIGHT:</strong> Retry + timeout mal configurados criam efeito dominó. Se você configura 5 retries com timeout de 10s cada, o tempo total pior caso é 50 segundos — e o usuário já foi embora há muito. Sempre calcule: <code>tempo_total = max_tentativas × timeout + soma_dos_backoffs</code>. O resultado precisa caber no seu SLA.</p>
+</blockquote>
+<hr />
+<h2>Erros comuns e boas práticas</h2>
+<p>Depois de revisar dezenas de projetos, alguns padrões se repetem. Abaixo, os erros que mais aparecem em code review, junto com a forma correta de resolver cada um.</p>
+<h3>Erro 1: assumir que "sem timeout" significa "vai funcionar"</h3>
+<p>Já vi sistemas em produção sem nenhum timeout configurado. Funciona até não funcionar. Quando a primeira instabilidade acontece, o sistema inteiro cai junto. Regra de ouro: toda chamada externa precisa de timeout explícito. Sem exceção.</p>
+<h3>Erro 2: copiar timeout de outro lugar sem pensar</h3>
+<p>Timeout não é configuração genérica. Uma consulta de CEP não precisa do mesmo timeout de um relatório PDF. Observe seus dados reais antes de escolher.</p>
+<h3>Erro 3: usar o mesmo timeout para tudo</h3>
+<p>Se você tem 20 integrações diferentes, provavelmente precisa de 20 timeouts diferentes. Centralize a configuração, mas permita override por endpoint.</p>
+<h3>Erro 4: ignorar o ECONNRESET silencioso</h3>
+<p>Conexões keep-alive podem ser fechadas pelo servidor enquanto estão no pool. Seu cliente pega uma conexão "morta", tenta usar e recebe ECONNRESET. Se você não trata isso, falha na primeira tentativa sem motivo claro. Bibliotecas modernas (axios, httpx, Go http.Client) já fazem retry automático nesse caso específico, mas confirme na documentação da versão que você usa.</p>
+<h3>Erro 5: timeout menor que o tempo de resposta legítimo</h3>
+<p>Configurar timeout de 1 segundo quando o p99 do serviço é 3 segundos gera falsos positivos. Você vai causar mais erros do que evitar. Sempre baseie o timeout em métricas reais.</p>
+<h3>Checklist de boas práticas</h3>
+<blockquote>
+<p>✅ <strong>CHECKLIST:</strong>
+- [ ] Todo cliente HTTP tem connection timeout configurado
+- [ ] Todo cliente HTTP tem read timeout configurado
+- [ ] Requests críticas têm total timeout como rede de proteção
+- [ ] Retry configurado apenas para métodos idempotentes
+- [ ] Exponential backoff com jitter implementado
+- [ ] Circuit breaker protegendo chamadas a serviços externos
+- [ ] Logs estruturados registram tentativas, timeouts e sucessos
+- [ ] Alertas configurados para taxa de timeout acima do normal
+- [ ] Fallback definido para quando o circuit breaker está aberto
+- [ ] Timeouts documentados no README do projeto</p>
+</blockquote>
+<h3>Observabilidade: sem métricas, você está no escuro</h3>
+<p>Timeout não é apenas configuração — é também observabilidade. Você precisa saber:</p>
+<ul>
+<li>Quantas requisições falharam por timeout nas últimas 24h?</li>
+<li>Qual o p50, p95 e p99 de tempo de resposta por endpoint?</li>
+<li>Com que frequência o circuit breaker abre?</li>
+<li>Quais são os endpoints com maior taxa de retry?</li>
+</ul>
+<p>Ferramentas como Prometheus, Datadog, New Relic e OpenTelemetry ajudam. Mesmo logs estruturados simples em JSON já resolvem o básico. O ponto é: sem dados, qualquer ajuste vira chute.</p>
+<h3>Cache como complemento</h3>
+<p>Timeouts protegem contra lentidão. Cache protege contra sobrecarga. Dados pouco voláteis (consulta de CEP, por exemplo) podem ser cacheados por horas ou dias. Isso reduz a quantidade de chamadas externas, baixa a chance de timeout e deixa o sistema mais rápido de ponta a ponta.</p>
+<p>Vale lembrar que cache tem seus próprios desafios. Você precisa pensar em estratégia de invalidação, TTL por tipo de dado e o que fazer quando o cache expira exatamente no momento de um pico de tráfego (o famoso "cache stampede"). Ferramentas como Redis com distributed locking, ou padrões como "stale-while-revalidate", resolvem esses casos.</p>
+<p>Quando você combina timeout agressivo com cache inteligente e circuit breaker, tem uma arquitetura que aguenta instabilidades externas sem repassar o problema para o usuário final. Esse é o objetivo de quem trabalha integrado com múltiplas APIs em produção, como é comum em sistemas que consultam <a href="https://hubdodesenvolvedor.com.br">dados cadastrais de CPF e CNPJ via Hub do Desenvolvedor</a>.</p>
+<h3>Teste de caos: quebre antes que a produção quebre</h3>
+<p>Uma prática pouco adotada mas muito eficaz é simular falhas em homologação antes de descobrir na marra em produção. Ferramentas como Toxiproxy, tc (traffic control do Linux) e libraries específicas de cada linguagem permitem injetar latência artificial, cortar conexões e degradar banda. Rode testes periódicos com o servidor externo respondendo em 10 segundos, 30 segundos ou nunca. Veja como sua aplicação reage. Se o usuário final vê spinner eterno, você sabe onde ajustar.</p>
+<p>Esse tipo de teste expõe problemas que passam despercebidos no dia a dia. Dá para descobrir, por exemplo, que um worker pool está sendo exaurido quando a API externa degrada, ou que o circuit breaker abre tarde demais. Correção antes do incidente custa muito menos do que correção durante o incidente.</p>
+<h3>Timeout em operações assíncronas</h3>
+<p>Nem toda chamada a API é síncrona. Filas de mensagens, processamento em background e jobs agendados também dependem de timeout para não travarem. Se você usa Celery, Sidekiq, BullMQ ou similares, configure timeout no job para que ele não fique rodando horas consumindo recurso de worker. O padrão é ter um soft timeout (que sinaliza ao job para parar graciosamente) e um hard timeout (que mata o processo). O soft precisa ser menor, para dar tempo de cleanup.</p>
+<h3>Monitore e ajuste sempre</h3>
+<p>Por último, lembre que configuração de timeout em APIs não é tarefa de uma vez só. O comportamento das suas dependências muda com o tempo. Um fornecedor lança nova versão, o tráfego cresce, um datacenter migra. Revise seus valores trimestralmente e ajuste conforme os dados mostrarem. Times maduros tratam timeout como código de produção: revisado, testado e versionado.</p>
+<hr />
+<h2>Conclusão</h2>
+<p>Configurar timeout em APIs parece básico até você ver uma aplicação cair por causa disso. Os cinco tipos (connection, read, write, request e idle) cobrem fases distintas da comunicação HTTP, e cada um merece atenção individual. Saber qual número escolher vem da observação de dados reais, não de chute.</p>
+<p>Mais importante: timeout isolado não basta. Combine com retry idempotente, exponential backoff com jitter, circuit breaker para falhas persistentes e observabilidade que mostre como seu sistema se comporta sob stress. Essa é a diferença entre um sistema que cai na primeira instabilidade e um que continua servindo seus usuários mesmo quando um fornecedor está enfrentando problemas.</p>
+<p>Se você desenvolve aplicações que dependem de consultas a CPF, CNPJ ou CEP e quer previsibilidade nos tempos de resposta, experimente a Hub do Desenvolvedor. Nossas APIs têm documentação clara, valores recomendados de timeout e suporte técnico que fala a sua língua. Cadastre-se, pegue seu token e faça a primeira requisição em menos de cinco minutos — já com o timeout em APIs configurado do jeito certo.</p>
+<hr />
+<p><strong>EXTRAS WORDPRESS:</strong></p>
+<p><strong>Alt-text de imagens sugeridas:</strong>
+1. "Diagrama explicando os cinco tipos de timeout em APIs: connection, read, write, request e idle"
+2. "Fluxograma de retry com exponential backoff e jitter em chamadas a APIs externas"
+3. "Ilustração dos três estados do circuit breaker: closed, open e half-open"
+4. "Tabela comparativa de configuração de timeout em axios, requests, httpx e Go http.Client"
+5. "Exemplo de logs estruturados mostrando timeouts e tentativas de retry em ambiente de produção"
+6. "Dashboard de observabilidade com métricas de p95 e p99 de tempo de resposta de APIs"</p>
+<p><strong>Links internos sugeridos:</strong>
+1. "Como integrar a API de CPF da Hub do Desenvolvedor em Node.js"
+2. "Boas práticas para consumir APIs REST em produção"
+3. "Comparativo de bibliotecas HTTP para Python em 2026"
+4. "Como montar um connection pool eficiente para APIs externas"</p>
+<p><strong>Links externos sugeridos:</strong>
+- SUGESTÃO DE LINK EXTERNO EM "AbortController é a forma oficial" : "https://developer.mozilla.org/en-US/docs/Web/API/AbortController"
+- SUGESTÃO DE LINK EXTERNO EM "bibliotecas como opossum implementam isso prontinho" : "https://nodeshift.dev/opossum/"
+- SUGESTÃO DE LINK EXTERNO EM "OpenTelemetry ajudam" : "https://opentelemetry.io/"
+- SUGESTÃO DE LINK EXTERNO EM "sony/gobreaker" : "https://github.com/sony/gobreaker"
+- SUGESTÃO DE LINK EXTERNO EM "httpx é mais moderno" : "https://www.python-httpx.org/"</p>
+<p><strong>Schema markup sugerido:</strong></p>
+<pre><code class="language-json">{
+  &quot;@context&quot;: &quot;https://schema.org&quot;,
+  &quot;@type&quot;: &quot;TechArticle&quot;,
+  &quot;headline&quot;: &quot;Timeouts em APIs: o que são e como funcionam&quot;,
+  &quot;description&quot;: &quot;Entenda o que é timeout em APIs, tipos, configuração em Node, Python, Go e boas práticas para evitar travamentos e perder requisições.&quot;,
+  &quot;author&quot;: {
+    &quot;@type&quot;: &quot;Organization&quot;,
+    &quot;name&quot;: &quot;Hub do Desenvolvedor&quot;
+  },
+  &quot;publisher&quot;: {
+    &quot;@type&quot;: &quot;Organization&quot;,
+    &quot;name&quot;: &quot;Hub do Desenvolvedor&quot;,
+    &quot;logo&quot;: {
+      &quot;@type&quot;: &quot;ImageObject&quot;,
+      &quot;url&quot;: &quot;https://hubdodesenvolvedor.com.br/logo.png&quot;
+    }
+  },
+  &quot;datePublished&quot;: &quot;2026-04-20&quot;,
+  &quot;dateModified&quot;: &quot;2026-04-20&quot;,
+  &quot;proficiencyLevel&quot;: &quot;Intermediate&quot;,
+  &quot;dependencies&quot;: &quot;Node.js, Python 3.10+, Go 1.21+&quot;,
+  &quot;mainEntityOfPage&quot;: {
+    &quot;@type&quot;: &quot;WebPage&quot;,
+    &quot;@id&quot;: &quot;https://hubdodesenvolvedor.com.br/blog/timeouts-em-apis-o-que-sao-como-funcionam&quot;
+  }
+}
+</code></pre>
+<p>Complementar com FAQPage:</p>
+<pre><code class="language-json">{
+  &quot;@context&quot;: &quot;https://schema.org&quot;,
+  &quot;@type&quot;: &quot;FAQPage&quot;,
+  &quot;mainEntity&quot;: [
+    {
+      &quot;@type&quot;: &quot;Question&quot;,
+      &quot;name&quot;: &quot;Qual o valor ideal de timeout para uma API?&quot;,
+      &quot;acceptedAnswer&quot;: {
+        &quot;@type&quot;: &quot;Answer&quot;,
+        &quot;text&quot;: &quot;Não existe número universal. Observe o p95 e p99 em produção, adicione 20% a 50% de margem e use esse valor. APIs rápidas como consulta de CEP costumam ficar entre 2 e 5 segundos.&quot;
+      }
+    },
+    {
+      &quot;@type&quot;: &quot;Question&quot;,
+      &quot;name&quot;: &quot;O Python requests tem timeout padrão?&quot;,
+      &quot;acceptedAnswer&quot;: {
+        &quot;@type&quot;: &quot;Answer&quot;,
+        &quot;text&quot;: &quot;Não. Sem o parâmetro timeout, o requests espera indefinidamente. Sempre defina explicitamente, mesmo valores generosos como 30 segundos.&quot;
+      }
+    },
+    {
+      &quot;@type&quot;: &quot;Question&quot;,
+      &quot;name&quot;: &quot;Qual a diferença entre connection timeout e read timeout?&quot;,
+      &quot;acceptedAnswer&quot;: {
+        &quot;@type&quot;: &quot;Answer&quot;,
+        &quot;text&quot;: &quot;Connection timeout é o tempo para estabelecer a conexão TCP/TLS. Read timeout é o tempo entre pacotes de dados recebidos depois que a conexão já foi estabelecida.&quot;
+      }
+    }
+  ]
+}
+</code></pre>
+<p><strong>Categoria:</strong> Desenvolvimento / APIs</p>
+<p><strong>Tags:</strong> timeout em APIs, HTTP, integrações, retry, circuit breaker, exponential backoff, axios, requests, httpx, Go, Node.js, boas práticas, consulta CPF, consulta CNPJ, consulta CEP, Hub do Desenvolvedor</p>
+<p><strong>Tempo de leitura estimado:</strong> 13 minutos</p>
+</article>
+</body>
+</html>
