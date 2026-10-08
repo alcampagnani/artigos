@@ -70,7 +70,7 @@ CREATE UNIQUE INDEX CONCURRENTLY ux_empresas_cnpj_txt ON empresas (cnpj_txt);
 <blockquote>
 <p><strong>Atenção:</strong> nunca converta o tipo sem o <code>LPAD</code>. Um <code>ALTER COLUMN ... TYPE text</code> direto no <code>BIGINT</code> guarda o número sem os zeros, e o CNPJ <code>00.394.460/0058-87</code> vira <code>394460005887</code>, que não passa em nenhuma validação.</p>
 </blockquote>
-<p>Se o seu sistema consulta dados cadastrais de clientes ou fornecedores, teste a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/cnpj/">API de CNPJ do Hub do Desenvolvedor</a>. Ela consulta os dados direto na Receita, sem captcha, devolve JSON ou XML e tem teste grátis de 3 dias, tempo suficiente para rodar a sua base migrada.</p>
+<p>Se o seu sistema consulta dados cadastrais de clientes ou fornecedores, teste a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/cnpj/">API de CNPJ que já aceita o formato alfanumérico</a>, do Hub do Desenvolvedor. Ela consulta os dados direto na Receita, sem captcha, devolve JSON ou XML e tem teste grátis de 3 dias, tempo suficiente para rodar a sua base migrada.</p>
 <h2>Validação, máscara e regex do CNPJ alfanumérico no código</h2>
 <p>Depois do banco, o problema migra para o código. Validadores, máscaras e regras de negócio foram escritos supondo 14 dígitos, e quase sempre essa suposição fica escondida num <code>\d</code>, num <code>int()</code> ou num campo numérico.</p>
 <h3>Regex do novo formato</h3>
@@ -272,7 +272,7 @@ def gerar_massa(qtd=1000, semente=42):
 <h2>Resumo para colocar em produção</h2>
 <p>Para adaptar o sistema ao CNPJ alfanumérico 2026, migre colunas para <code>CHAR(14)</code>, normalize a entrada para maiúsculas sem máscara e troque <code>\d{14}</code> pela nova regex. Depois, valide o DV com ASCII menos 48, revise contratos de integração e gere massa de teste fictícia. Nenhum desses passos é grande, mas basta esquecer um para o erro aparecer no cadastro do primeiro cliente novo.</p>
 <p>Os dois formatos vão conviver por muitos anos, então a meta é tratar o CNPJ como texto em todo o sistema, do formulário ao arquivo do SPED.</p>
-<p>Para validar a base migrada contra dados reais da Receita, crie sua conta e use a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/cnpj/">API de consulta de CNPJ do Hub do Desenvolvedor</a>. Ela traz os dados cadastrais completos da empresa, direto da Receita. Confira no painel os campos da resposta e aproveite o teste grátis de 3 dias.</p>
+<p>Para validar a base migrada contra dados reais da Receita, crie sua conta e use a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/cnpj/">API de consulta de CNPJ do Hub do Desenvolvedor</a>, que já aceita o formato alfanumérico. Ela traz os dados cadastrais completos da empresa, direto da Receita. Confira no painel os campos da resposta e aproveite o teste grátis de 3 dias.</p>
 </article>
 </body>
 </html>
