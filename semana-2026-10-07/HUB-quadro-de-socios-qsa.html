@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quadro de Sócios (QSA): Como Consultar os Sócios de um CNPJ</title>
+<meta name="description" content="Veja o que o quadro de sócios (QSA) de um CNPJ mostra, por que o CPF do sócio vem mascarado e como consultar os sócios por API para KYB, antifraude e crédito.">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<article>
+<h1>Quadro de Sócios (QSA): Como Consultar os Sócios de um CNPJ</h1>
+<p>Saber quem está por trás de um CNPJ (Cadastro Nacional da Pessoa Jurídica) é uma das primeiras perguntas de qualquer cadastro B2B. O fornecedor novo tem sócios com histórico? Quem assina o contrato pode mesmo representar a empresa? A resposta oficial está no quadro de sócios e administradores, o QSA, que a Receita Federal mantém para cada empresa. Este guia mostra o que o quadro de sócios traz e o que fica de fora. Depois, explica onde consultar, como usar os sócios em KYB, fraude e crédito e como levar os dados ao sistema sem tropeçar na LGPD (Lei Geral de Proteção de Dados Pessoais).</p>
+<p><img src="img/HUB-quadro-de-socios-qsa-hero.webp" alt="Analista de risco confere na tela o quadro de sócios de uma empresa antes de aprovar um cadastro" data-destacada="1" data-legenda="O quadro de sócios mostra quem compõe e quem administra a empresa, dado central em cadastros B2B."></p>
+<h2>O que é o quadro de sócios (QSA) de um CNPJ</h2>
+<p>QSA é a sigla de Quadro de Sócios e Administradores. É a parte do cadastro do CNPJ que lista as pessoas físicas e jurídicas que compõem a sociedade ou que a administram. A empresa informa o quadro de sócios à Receita na abertura e o atualiza a cada alteração contratual. Por isso, o QSA mostra o que foi registrado, e não necessariamente o que acontece na prática. Um sócio que vendeu a parte dele, mas cuja alteração ainda não foi registrada, continua no quadro. Um "laranja" também aparece lá como se fosse o dono de verdade.</p>
+<h3>Quem aparece no QSA</h3>
+<p>Cada linha do quadro de sócios representa uma pessoa e o papel dela na empresa. O papel vem como um código de qualificação. Uma limitada costuma ter sócios e sócios-administradores. Já uma sociedade anônima mostra diretores, presidente e conselheiros. Uma associação, por sua vez, traz o presidente e outros dirigentes.</p>
+<p>O sócio pode ser de três tipos, segundo o layout oficial da base pública do CNPJ, que a Receita publica todo mês (os dados abertos, explicados mais abaixo):</p>
+<ol>
+<li>pessoa jurídica, identificada pelo CNPJ;</li>
+<li>pessoa física, identificada pelo CPF (Cadastro de Pessoas Físicas), que vem mascarado;</li>
+<li>estrangeiro, sem CPF ou CNPJ na base, mas com o código do país.</li>
+</ol>
+<h3>Empresas sem quadro de sócios</h3>
+<p>Nem toda natureza jurídica comporta QSA. O caso mais comum é o empresário individual, grupo em que entra o MEI (microempreendedor individual). Ali não existe sociedade: há um titular, que responde pela empresa. Se você consultar o QSA de um MEI, é normal receber o quadro vazio. Mesmo assim, o nome do titular costuma aparecer na própria razão social.</p>
+<p>O seu código precisa tratar esse caso como resposta válida, e não como erro. Um onboarding que exige "pelo menos um sócio" no quadro de sócios trava todo cliente MEI. Em vez disso, use a natureza jurídica, o código que diz o tipo de empresa (limitada, S.A., empresário individual etc.) e que vem na consulta de CNPJ comum. Se ela for 213-5, Empresário (Individual), caso do MEI, o QSA vazio é esperado.</p>
+<h3>Os códigos de qualificação mais comuns</h3>
+<p>A Receita publica a tabela de qualificações junto com os dados abertos do CNPJ. A versão de setembro de 2026 tem mais de 60 códigos. Estes são os que mais aparecem num cadastro B2B:</p>
+<table>
+<thead>
+<tr>
+<th>Código</th>
+<th>Qualificação</th>
+<th>Onde costuma aparecer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>05</td>
+<td>Administrador</td>
+<td>Limitadas com administrador não sócio</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Diretor</td>
+<td>Sociedades anônimas e cooperativas</td>
+</tr>
+<tr>
+<td>16</td>
+<td>Presidente</td>
+<td>Sociedades anônimas, associações e fundações</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Síndico (Condomínio)</td>
+<td>Condomínios edilícios</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Sócio</td>
+<td>Sócio sem poder de administração</td>
+</tr>
+<tr>
+<td>37</td>
+<td>Sócio Pessoa Jurídica Domiciliado no Exterior</td>
+<td>Empresas com sócio estrangeiro</td>
+</tr>
+<tr>
+<td>38</td>
+<td>Sócio Pessoa Física Residente no Exterior</td>
+<td>Empresas com sócio estrangeiro</td>
+</tr>
+<tr>
+<td>49</td>
+<td>Sócio-Administrador</td>
+<td>Limitadas, a qualificação mais frequente</td>
+</tr>
+<tr>
+<td>50</td>
+<td>Empresário</td>
+<td>Responsável do empresário individual, no cadastro da empresa (não na lista de sócios)</td>
+</tr>
+<tr>
+<td>65</td>
+<td>Titular Pessoa Física Residente ou Domiciliado no Brasil</td>
+<td>Titular de empresa individual de responsabilidade limitada, como a antiga EIRELI; não aparece no MEI</td>
+</tr>
+</tbody>
+</table>
+<p>O código 50 explica por que um MEI tem QSA vazio e, mesmo assim, um responsável: ele fica no campo de qualificação do responsável, no cadastro da empresa, e não na lista de sócios. Guarde o código, não o texto. Assim, quando a Receita ajustar uma descrição, você atualiza a tabela de domínio sem tocar nos registros.</p>
+<blockquote>
+<p><strong>Na prática:</strong> para saber se alguém pode assinar pela empresa, olhe a qualificação. Um "22 Sócio" é dono de uma parte do capital (as cotas), mas não administra. Já "49 Sócio-Administrador", "05 Administrador" ou "10 Diretor" indicam poder de gestão, conforme o contrato social.</p>
+</blockquote>
+<h2>O que a consulta QSA CNPJ mostra e o que fica de fora</h2>
+<p>A consulta QSA CNPJ entrega um retrato de quem está na empresa. Porém, o retrato tem lacunas que os times de produto descobrem tarde, quase sempre em produção.</p>
+<p><img src="img/HUB-quadro-de-socios-qsa-dados.webp" alt="Planilha com dados cadastrais de sócios e administradores aberta no notebook" data-legenda="Nome, qualificação e data de entrada vêm no QSA; participação de cada sócio e CPF completo, não."></p>
+<h3>Campos do QSA na base pública</h3>
+<p>O layout dos dados abertos define o arquivo de Sócios. A tabela resume o que vem no quadro de sócios público e o que não vem:</p>
+<table>
+<thead>
+<tr>
+<th>Informação</th>
+<th>Vem no QSA público?</th>
+<th>Observação para o sistema</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nome do sócio ou razão social do sócio PJ</td>
+<td>Sim</td>
+<td>Texto em maiúsculas; normalize antes de comparar</td>
+</tr>
+<tr>
+<td>Tipo do sócio (PJ, PF ou estrangeiro)</td>
+<td>Sim</td>
+<td>Códigos 1, 2 e 3</td>
+</tr>
+<tr>
+<td>CNPJ do sócio pessoa jurídica</td>
+<td>Sim, sem máscara, mas às vezes incompleto</td>
+<td>Na base de setembro de 2026, vem só a raiz: os oito primeiros caracteres, que identificam a empresa e não a filial</td>
+</tr>
+<tr>
+<td>CPF do sócio pessoa física</td>
+<td>Sim, mascarado</td>
+<td>Só os seis dígitos do meio ficam visíveis</td>
+</tr>
+<tr>
+<td>Qualificação do sócio</td>
+<td>Sim</td>
+<td>Código da tabela de qualificações</td>
+</tr>
+<tr>
+<td>Data de entrada na sociedade</td>
+<td>Sim</td>
+<td>Ajuda a ver mudanças recentes</td>
+</tr>
+<tr>
+<td>País do sócio estrangeiro</td>
+<td>Sim</td>
+<td>Código de país, da tabela de Países</td>
+</tr>
+<tr>
+<td>Representante legal (CPF, nome e qualificação)</td>
+<td>Sim, quando houver</td>
+<td>Sócio menor, incapaz ou estrangeiro; CPF também mascarado</td>
+</tr>
+<tr>
+<td>Faixa etária</td>
+<td>Sim</td>
+<td>Código de 0 a 9, calculado a partir da data de nascimento</td>
+</tr>
+<tr>
+<td>Percentual ou valor das cotas de cada sócio</td>
+<td>Não</td>
+<td>Está no contrato social, na Junta Comercial</td>
+</tr>
+<tr>
+<td>Capital social</td>
+<td>Não no QSA</td>
+<td>Vem no cadastro da empresa, como valor total</td>
+</tr>
+<tr>
+<td>Data de saída de quem deixou a sociedade</td>
+<td>Não</td>
+<td>Quem sai simplesmente deixa de constar</td>
+</tr>
+</tbody>
+</table>
+<p>A faixa etária usa esta escala: 0 = não se aplica (sócio pessoa jurídica ou estrangeiro); 1 = 0 a 12 anos; 2 = 13 a 20; 3 = 21 a 30; 4 = 31 a 40; 5 = 41 a 50; 6 = 51 a 60; 7 = 61 a 70; 8 = 71 a 80; 9 = acima de 80.</p>
+<h3>Por que o CPF do sócio vem mascarado</h3>
+<p>Na base pública, o CPF do sócio e o do representante legal aparecem com parte dos dígitos escondida. A regra oficial oculta os três primeiros e os dois verificadores. Pense no CPF fictício 123.456.789-09: na base, ele viraria <code>***456789**</code>. Só os seis do meio ficam visíveis, como o cartão de crédito que aparece só com o final na fatura.</p>
+<p>O próprio documento de metadados da Receita cita a base da regra: o art. 129, § 2º, da Lei 13.473/2017, a LDO (Lei de Diretrizes Orçamentárias) de 2018. Por isso, nenhuma API que se apoie nos dados públicos deveria prometer o CPF completo do sócio. Se um fornecedor prometer, vale perguntar de onde o dado vem.</p>
+<h3>Participação e capital: o que o QSA não responde</h3>
+<p>O quadro de sócios não diz quanto cada sócio tem da empresa. O capital social existe no cadastro, mas como valor total da empresa, sem divisão por sócio. Para saber quem detém 90% das cotas, você precisa do contrato social ou da ficha cadastral da Junta Comercial.</p>
+<p>Isso pesa em KYB (Know Your Business, conheça a empresa) e na busca pelo beneficiário final, a pessoa física que, no fim da cadeia de empresas, de fato controla o negócio. O QSA mostra quem está na sociedade, mas não mostra quem controla. Uma empresa com dez sócios pode ter um deles com quase todo o capital.</p>
+<h2>Onde consultar os sócios do CNPJ e como guardar o histórico</h2>
+<p>Existem três caminhos oficiais ou derivados do oficial. A escolha depende do volume e do uso que o dado vai ter.</p>
+<h3>No site da Receita, com captcha</h3>
+<p>O <a href="https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/cnpjreva_solicitacao.asp">comprovante de inscrição e de situação cadastral</a> tem uma opção para consultar o QSA. Você digita o CNPJ, resolve o captcha e vê nome e qualificação de cada integrante. Para consultar QSA CNPJ de um fornecedor de vez em quando, resolve.</p>
+<p>Para integrar a um sistema, não serve. O captcha existe justamente para impedir automação, e raspar HTML quebra na primeira mudança de layout. Além disso, a tela não guarda registro de quando você consultou, e esse registro importa numa auditoria.</p>
+<h3>Nos dados abertos do CNPJ, arquivo de Sócios</h3>
+<p>A Receita publica a base completa do CNPJ no <a href="https://arquivos.receitafederal.gov.br/index.php/s/YggdBLfdninEJX9">repositório de dados abertos</a>, em pastas mensais. A de setembro de 2026, por exemplo, saiu em 14/09 e traz o arquivo de Sócios dividido em dez partes compactadas. Os campos seguem o <a href="https://www.gov.br/receitafederal/dados/cnpj-metadados.pdf">layout publicado nos metadados do CNPJ</a>.</p>
+<p>A base serve bem para análise em lote, estudos de mercado e enriquecimento de carteira. Por outro lado, pede infraestrutura: download de vários gigabytes, carga em banco relacional e junção por CNPJ básico, os oito primeiros dígitos. E o dado fica até um mês atrasado: uma troca de sócio feita logo depois da publicação só aparece na pasta do mês seguinte.</p>
+<h3>Por API, dentro do fluxo do sistema</h3>
+<p>A API é o caminho para quem precisa da consulta sócios CNPJ no momento do cadastro, da análise de crédito ou da assinatura. Você manda o CNPJ e recebe JSON com o quadro de sócios, sem captcha e sem montar base própria. Em seguida, grava a resposta com data e hora da consulta.</p>
+<p>Se o seu onboarding precisa do QSA e da validação do CPF do administrador, teste a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/webservice-cnpj-cpf-receita-federal/">API de CNPJ e CPF da Receita do Hub do Desenvolvedor</a>. Ela faz as duas consultas com um único token e um único plano. A resposta do CNPJ traz o quadro de sócios junto com razão social, situação, natureza jurídica e CNAE (Classificação Nacional de Atividades Econômicas), em JSON ou XML. O teste grátis dura 3 dias.</p>
+<h3>Um exemplo de consulta em Python</h3>
+<p>Os nomes de campos abaixo são ilustrativos. Confira os nomes reais na documentação do seu painel antes de codificar.</p>
+<pre><code class="language-python">import re
+import requests
+
+URL_DA_API = &quot;https://URL_DA_API/cnpj&quot;  # confira no painel
+TOKEN = &quot;SEU_TOKEN&quot;
+
+def normalizar_cnpj(cnpj):
+    # mantém letras: o CNPJ pode ser alfanumérico
+    return re.sub(r&quot;[^0-9A-Z]&quot;, &quot;&quot;, cnpj.upper())
+
+def consultar_qsa(cnpj):
+    resp = requests.get(
+        URL_DA_API,
+        params={&quot;cnpj&quot;: normalizar_cnpj(cnpj), &quot;token&quot;: TOKEN},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    dados = resp.json()
+    return dados.get(&quot;qsa&quot;) or []  # lista vazia é válida (ex.: MEI)
+
+for socio in consultar_qsa(&quot;12.345.678/0001-95&quot;):
+    print(socio[&quot;nome&quot;], socio[&quot;qualificacao&quot;])
+</code></pre>
+<p>Repare no comentário sobre letras. Desde julho de 2026, novos CNPJs podem ter letras nas 12 primeiras posições, e o artigo sobre o <a href="https://blog.hubdodesenvolvedor.com.br/cnpj-alfanumerico/">CNPJ alfanumérico</a> mostra o que muda na validação. Para os outros campos da resposta, o guia da <a href="https://blog.hubdodesenvolvedor.com.br/api-de-consulta-de-cnpj/">API de consulta de CNPJ</a> detalha razão social, endereço e situação cadastral. Quem também usa a atividade da empresa no cadastro encontra o passo a passo em <a href="https://blog.hubdodesenvolvedor.com.br/cnae-pelo-cnpj/">como consultar o CNAE pelo CNPJ</a>.</p>
+<h3>Depois da consulta: como modelar o quadro de sócios no banco</h3>
+<p><img src="img/HUB-quadro-de-socios-qsa-banco.webp" alt="Código aberto no monitor de um desenvolvedor que integra o quadro de sócios ao sistema" data-legenda="Uma tabela 1:N com datas de primeira e última aparição guarda o histórico que a base pública não tem."></p>
+<p>O quadro de sócios é uma relação de um para muitos (1:N): uma empresa, vários integrantes. O exemplo é para PostgreSQL. Guarde-o numa tabela própria, e não em colunas da tabela de empresas. Além disso, registre quando cada sócio foi visto pela primeira e pela última vez.</p>
+<pre><code class="language-sql">CREATE TABLE empresa_socio (
+  id              BIGSERIAL PRIMARY KEY,
+  cnpj_empresa    CHAR(14)     NOT NULL,
+  tipo_socio      SMALLINT     NOT NULL,  -- 1 PJ, 2 PF, 3 estrangeiro
+  nome            VARCHAR(200) NOT NULL,
+  documento       VARCHAR(14),            -- CNPJ (completo ou raiz) ou CPF mascarado
+  qualificacao    CHAR(2)      NOT NULL,
+  data_entrada    DATE,
+  visto_primeiro  TIMESTAMP    NOT NULL,
+  visto_ultimo    TIMESTAMP    NOT NULL,
+  ativo           BOOLEAN      NOT NULL DEFAULT TRUE,
+  UNIQUE (cnpj_empresa, tipo_socio, nome, qualificacao)  -- permite atualizar visto_ultimo
+);
+</code></pre>
+<p>Como a base pública não informa a data de saída, o histórico nasce das suas consultas. Se um sócio sumiu da resposta de hoje, marque <code>ativo = false</code> e mantenha a linha. Assim você responde, meses depois, quem era administrador na data em que o contrato foi assinado.</p>
+<p>O sócio pessoa jurídica pede um cuidado a mais. Ele tem o próprio quadro de sócios, que pode ter outra PJ, e assim por diante. Antes de descer a cadeia, confira se a sua fonte devolve o CNPJ completo do sócio PJ ou só a raiz de oito caracteres. Se vier só a raiz, consulte pela matriz (raiz + 0001 + dígitos verificadores), porque o QSA é o mesmo para matriz e filiais. Para chegar às pessoas físicas, use duas travas: um limite de níveis (no exemplo, cinco) e uma lista das empresas já visitadas, para não entrar em loop quando a empresa A é sócia da B e a B é sócia da A:</p>
+<pre><code class="language-javascript">// consultarQsa deve aceitar CNPJ completo ou só a raiz (8 caracteres)
+async function cadeiaSocietaria(cnpj, consultarQsa, nivel = 0, vistos = new Set()) {
+  const raiz = cnpj.slice(0, 8);                    // mesma empresa, com ou sem filial
+  if (nivel &gt; 4 || vistos.has(raiz)) return [];     // limite e proteção contra ciclo
+  vistos.add(raiz);
+  const socios = (await consultarQsa(cnpj)) || [];
+  const resultado = [];
+  for (const s of socios) {
+    resultado.push({ ...s, nivel, empresa: cnpj });
+    if (Number(s.tipo) === 1 &amp;&amp; s.documento) {      // sócio PJ: desce um nível
+      resultado.push(...await cadeiaSocietaria(s.documento, consultarQsa, nivel + 1, vistos));
+    }
+  }
+  return resultado;
+}
+</code></pre>
+<p>Cada nível custa uma consulta. Por isso, faça cache das PJs que aparecem com frequência, como holdings e fundos.</p>
+<h2>Como usar o quadro de sócios em KYB, fraude e crédito, dentro da LGPD</h2>
+<p>Risco procura sinais de fraude, compliance quer saber quem está por trás da empresa e produto precisa saber quem pode assinar. Veja como o quadro de sócios atende cada caso.</p>
+<h3>Due diligence e KYC/KYB</h3>
+<p>Em KYC (Know Your Customer, conheça seu cliente) de pessoa jurídica, o QSA responde quem são as pessoas por trás da empresa. Na due diligence de fornecedor ou de aquisição, ele dá os nomes que, cruzados com outras bases, mostram se algum sócio também aparece em empresa concorrente, em empresa inidônea (impedida de contratar com o poder público) ou ligada a pessoa politicamente exposta (PEP, quem ocupa ou ocupou cargo público relevante). O artigo sobre <a href="https://blog.hubdodesenvolvedor.com.br/know-your-customer-ecommerce/">KYC no e-commerce</a> mostra como encaixar essas checagens num fluxo de cadastro.</p>
+<h3>Sinais de risco no quadro de sócios</h3>
+<p>Nenhum sinal isolado prova fraude. Combinados, porém, os sinais pedem análise manual antes de aprovar o cadastro ou liberar crédito:</p>
+<ul>
+<li>empresa aberta há poucas semanas que já pede limite alto;</li>
+<li>sócio pessoa física presente em dezenas de empresas abertas em sequência (o que exige busca reversa pelo nome na base aberta), padrão típico de laranja, a pessoa que empresta o nome para empresas que outra controla;</li>
+<li>troca de todo o quadro de sócios pouco antes do pedido de crédito, visível pela data de entrada;</li>
+<li>sócio PJ estrangeiro, cujo beneficiário final o QSA não mostra e precisa ser levantado em outra fonte;</li>
+<li>faixa etária incompatível com o perfil, como sócio na faixa 2 (13 a 20 anos) à frente de uma empresa com faturamento alto;</li>
+<li>assinante do contrato ausente do QSA e sem procuração.</li>
+</ul>
+<p>Cruzar esses sinais com outras fontes é o tema do artigo sobre <a href="https://blog.hubdodesenvolvedor.com.br/prevencao-de-fraudes-no-onboarding-cruzamento-de-dados/">prevenção de fraudes no onboarding com cruzamento de dados</a>. O quadro de sócios entra ali como uma das camadas, ao lado de endereço, telefone e situação cadastral.</p>
+<p><img src="img/HUB-quadro-de-socios-qsa-assinatura.webp" alt="Mão assina contrato empresarial em papel sobre a mesa" data-legenda="Antes de aceitar uma assinatura, confira se quem assina aparece no QSA com qualificação de administrador."></p>
+<h3>Análise de crédito e quem assina o contrato</h3>
+<p>Na análise de crédito, o quadro de sócios liga a empresa às pessoas que respondem por ela. Uma empresa aberta há dois meses cujos sócios administram outras empresas ativas há dez anos é um risco bem diferente de uma empresa da mesma idade com sócios que não aparecem em nenhum outro cadastro.</p>
+<p>Na assinatura, a pergunta é mais objetiva: essa pessoa pode representar a empresa? Primeiro, procure o nome dela no QSA. Depois, confira a qualificação. Se ela aparece só como "22 Sócio", sem administração, peça o contrato social ou uma procuração. Afinal, o QSA indica quem administra, mas os poderes exatos estão no contrato.</p>
+<h3>Cruzar o sócio com a consulta de CPF</h3>
+<p>Muita gente espera achar o CPF completo no quadro de sócios. Como ele vem mascarado, a validação depende de o próprio cliente informar o CPF no onboarding. O fluxo correto tem quatro passos:</p>
+<ol>
+<li>o representante informa nome, CPF e data de nascimento no cadastro;</li>
+<li>o sistema consulta o QSA do CNPJ e localiza a pessoa pelo nome;</li>
+<li>se a sua fonte trouxer o CPF mascarado do sócio (como a base de dados abertos), o sistema confere se os seis dígitos visíveis batem com o CPF informado; se trouxer só nome e qualificação, o cruzamento é pelo nome;</li>
+<li>a consulta de CPF confirma nome e situação cadastral na Receita.</li>
+</ol>
+<p>A <a href="https://blog.hubdodesenvolvedor.com.br/api-consulta-cpf-guia-completo/">API de consulta de CPF</a> recebe CPF e data de nascimento e devolve nome completo e situação cadastral. Juntando as duas respostas, você sabe se a pessoa que está no cadastro é a mesma que está no quadro de sócios.</p>
+<pre><code class="language-python">import re
+import unicodedata
+
+def so_digitos(valor):
+    return re.sub(r&quot;\D&quot;, &quot;&quot;, valor or &quot;&quot;)
+
+def normalizar_nome(nome):
+    sem_acento = unicodedata.normalize(&quot;NFKD&quot;, nome).encode(&quot;ascii&quot;, &quot;ignore&quot;).decode()
+    return &quot; &quot;.join(sem_acento.upper().split())
+
+def cpf_bate_com_mascara(cpf_informado, cpf_mascarado):
+    # máscara oficial: ***NNNNNN** (seis dígitos do meio visíveis)
+    cpf = so_digitos(cpf_informado)
+    mascara = re.sub(r&quot;[^0-9*]&quot;, &quot;&quot;, cpf_mascarado or &quot;&quot;)
+    m = re.fullmatch(r&quot;\*{3}(\d{6})\*{2}&quot;, mascara)
+    if not m or m.group(1) == &quot;000000&quot; or len(cpf) != 11:
+        return False  # sem máscara válida ou placeholder de representante ausente
+    return cpf[3:9] == m.group(1)
+
+def representante_confere(socio, cpf_informado, nome_receita):
+    &quot;&quot;&quot;Devolve 'ok', 'revisar' ou 'recusar'.&quot;&quot;&quot;
+    if not cpf_bate_com_mascara(cpf_informado, socio.get(&quot;documento&quot;)):
+        return &quot;recusar&quot;
+    if normalizar_nome(socio[&quot;nome&quot;]) != normalizar_nome(nome_receita):
+        return &quot;revisar&quot;  # grafia diferente: revisão manual
+    return &quot;ok&quot;
+</code></pre>
+<p>Seis dígitos batendo não provam identidade sozinhos: há mil CPFs válidos com os mesmos seis dígitos do meio, porque os três primeiros variam e os dois últimos são calculados. Com o nome conferido e a consulta de CPF, a chance de coincidência fica perto de zero. Por isso a função devolve "revisar" quando só o nome diverge: grafia diferente vai para revisão manual, e não para recusa.</p>
+<blockquote>
+<p><strong>Atenção:</strong> não tente "completar" o CPF mascarado por força bruta, testando combinações na consulta de CPF. Além de gastar chamadas, essa prática trata dado pessoal sem finalidade legítima e sem base legal. O CPF completo vem do titular, no cadastro.</p>
+</blockquote>
+<p><img src="img/HUB-quadro-de-socios-qsa-diagrama.webp" alt="Fluxograma da consulta do quadro de sócios pelo CNPJ e da validação do CPF do administrador" data-legenda="Fluxo sugerido: CNPJ, QSA, comparação da máscara do CPF e consulta de CPF do representante."></p>
+<p>Quer rodar esse cruzamento no seu onboarding? <a href="https://www.hubdodesenvolvedor.com.br/detalhes/webservice-cnpj-cpf-receita-federal/">Crie uma conta no Hub do Desenvolvedor</a> e teste o QSA e a validação de CPF com cadastros reais da sua base. As duas consultas saem do mesmo token, o que simplifica o código e a cobrança.</p>
+<h3>LGPD: o que fazer com os dados dos sócios</h3>
+<p>O nome e o CPF parcial de um sócio são dados pessoais. Logo, a <a href="https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm">Lei Geral de Proteção de Dados Pessoais, Lei 13.709/2018</a>, vale para eles, mesmo vindos de base pública. O art. 7º, § 3º, manda considerar, no dado de acesso público, a finalidade, a boa-fé e o interesse público que justificaram sua disponibilização. Na prática, dado público não é dado livre: use-o para fins compatíveis com o motivo da publicação, como saber quem responde por uma empresa, e não para montar lista de marketing.</p>
+<p>Primeiro, defina e registre a base legal. Prevenção a fraudes e KYB costumam se apoiar numa destas hipóteses do art. 7º:</p>
+<ul>
+<li>obrigação legal ou regulatória (inciso II);</li>
+<li>legítimo interesse (inciso IX);</li>
+<li>proteção do crédito (inciso X);</li>
+<li>execução de contrato (inciso V), só quando o próprio sócio é parte do contrato.</li>
+</ul>
+<p>Quem decide é o seu jurídico, caso a caso.</p>
+<p>Depois, respeite a finalidade. Um quadro de sócios buscado para KYB não deve virar lista de prospecção. Guarde também só o necessário: se a faixa etária não entra em nenhuma regra, não a armazene. Por fim, não mostre o CPF, nem mascarado, a quem não precisa dele. Na tela do vendedor, nome e qualificação bastam.</p>
+<h2>Perguntas frequentes sobre o quadro de sócios</h2>
+<h3>O quadro de sócios mostra o CPF completo dos sócios?</h3>
+<p>Não. Na base pública da Receita, o CPF do sócio pessoa física vem mascarado. Os três primeiros dígitos e os dois verificadores ficam ocultos, como em <code>***456789**</code> (exemplo fictício). O CPF completo precisa ser informado pelo próprio sócio no cadastro.</p>
+<h3>O QSA mostra quanto cada sócio tem da empresa?</h3>
+<p>Não. O quadro de sócios traz nome, qualificação e data de entrada, mas não o percentual ou o valor das cotas. A participação de cada sócio está no contrato social registrado na Junta Comercial.</p>
+<h3>MEI tem quadro de sócios?</h3>
+<p>Não. O MEI é empresário individual: tem um titular, e não sócios. Por isso a consulta do QSA de um MEI costuma voltar vazia, e o sistema deve tratar isso como resposta válida.</p>
+<h3>Com que frequência a Receita atualiza os dados de sócios?</h3>
+<p>Nos dados abertos do CNPJ, a Receita publica uma pasta nova por mês, com o arquivo de Sócios. Uma API que consulta o cadastro da Receita no momento da chamada reflete mudanças antes da base mensal; já uma API montada sobre os dados abertos herda a mesma defasagem. Pergunte ao fornecedor qual é a fonte.</p>
+<h3>Posso consultar os sócios de um CNPJ sem violar a LGPD?</h3>
+<p>Pode, desde que haja finalidade legítima e base legal, como prevenção a fraudes, KYB ou proteção do crédito. Guarde só o necessário, não exponha o CPF e registre por que a consulta foi feita.</p>
+<h2>Resumo para levar ao código</h2>
+<p>O quadro de sócios responde quem compõe e quem administra uma empresa. Ele tem limites claros: CPF mascarado, nenhuma participação por sócio e nenhum registro de quem saiu. No código, trate QSA vazio como resposta válida para MEI e guarde o histórico a partir das suas consultas. Já o CPF do administrador se valida com o dado que ele mesmo informa.</p>
+<p>Para juntar a consulta de sócios do CNPJ e a validação de CPF no mesmo fluxo, teste a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/webservice-cnpj-cpf-receita-federal/">API de CNPJ e CPF da Receita do Hub do Desenvolvedor</a>. Se precisar só dos dados da empresa, a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/cnpj/">API de CNPJ</a> traz os sócios junto com os dados cadastrais da empresa.</p>
+</article>
+</body>
+</html>

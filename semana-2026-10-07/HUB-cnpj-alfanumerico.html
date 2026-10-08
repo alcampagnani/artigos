@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CNPJ Alfanumérico: O que Muda no Sistema e Como Adaptar</title>
+<meta name="description" content="CNPJ alfanumérico na prática: o que muda no banco, na máscara, na regex, na NF-e e nas integrações, com SQL de migração, código e gerador de massa de teste.">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<article>
+<h1>CNPJ Alfanumérico: O que Muda no Sistema e Como Adaptar</h1>
+<p>O CNPJ alfanumérico já existe fora do papel. A Receita Federal colocou os sistemas novos em produção em 27 de julho de 2026 e atribuiu o primeiro número com letras no dia 31: o <code>00.000.000/E08G-12</code>, de uma filial do Banco do Brasil. Desde então, as novas inscrições podem receber letras nas 12 primeiras posições. Para quem programa, o problema costuma estar do lado de cá. Pode ser um <code>BIGINT</code> esquecido no banco, uma máscara que só aceita dígitos ou uma integração que manda o CNPJ como número no JSON.</p>
+<p><img src="img/HUB-cnpj-alfanumerico-hero.webp" alt="Desenvolvedor revisa código de cadastro de empresas para aceitar o CNPJ alfanumérico" data-destacada="1" data-legenda="O novo formato só chega às novas inscrições, mas o sistema precisa aceitar os dois tipos de CNPJ ao mesmo tempo."></p>
+<p>Este guia mostra, camada por camada, o que deixa de funcionar com o CNPJ alfanumérico e como adaptar: banco de dados, validação, front-end, integrações, NF-e, SPED e massa de teste. Os exemplos estão em SQL, Python e JavaScript.</p>
+<h2>O que é o CNPJ alfanumérico e o que muda no formato</h2>
+<p>O CNPJ (Cadastro Nacional da Pessoa Jurídica) continua com 14 posições. A mudança veio pela <a href="https://normasinternet2.receita.fazenda.gov.br/#/consulta/externa/141102">Instrução Normativa RFB nº 2.229/2024</a>, que alterou a IN RFB 2.119/2022 e criou o Anexo XV com a nova regra de formação. O texto previa a implementação a partir de julho de 2026, e o cronograma foi cumprido.</p>
+<h3>Formato: 12 posições alfanuméricas e 2 dígitos numéricos</h3>
+<p>As oito primeiras posições formam a raiz, que identifica a empresa. As quatro seguintes indicam a ordem do estabelecimento, como matriz ou filial. Agora, essas 12 posições aceitam números de 0 a 9 e as 26 letras maiúsculas de A a Z. Já as duas últimas, os dígitos verificadores (DV), continuam numéricas.</p>
+<p>A máscara também não muda: <code>XX.XXX.XXX/XXXX-XX</code>. Um CNPJ alfanumérico exemplo, usado pela própria Receita nos materiais oficiais, é <code>12.ABC.345/01DE-35</code>. Só os dois primeiros caracteres lembram um CNPJ comum; a letra aparece já na terceira posição.</p>
+<p>Há um detalhe sobre as letras. Chegou a circular a ideia de vetar algumas delas (I, O, U, Q e F), citada na Nota Técnica Conjunta 2025.001 do Portal da NF-e, e a Receita não confirmou o veto. Nas <a href="https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/perguntas-e-respostas/cnpj/cnpj-alfanumerico.pdf">perguntas e respostas oficiais da Receita</a>, a orientação é que os sistemas aceitem de A a Z; filtrar combinações indesejadas é papel dela, na hora de gerar o número. Para o seu validador, a regra é simples: aceite qualquer letra maiúscula.</p>
+<h3>Quem recebe o novo CNPJ alfanumérico e quem continua igual</h3>
+<p>Nenhum CNPJ existente muda. A empresa aberta em 2010 segue com o mesmo número e o mesmo DV, sem recadastramento. O novo CNPJ alfanumérico vale só para novas inscrições, inclusive filiais novas de empresas antigas.</p>
+<p>Isso cria três situações que o sistema precisa suportar ao mesmo tempo:</p>
+<ol>
+<li>Raiz e ordem numéricas: o CNPJ de sempre.</li>
+<li>Raiz numérica e ordem alfanumérica: filial nova de uma empresa antiga, como <code>12.345.678/000A-08</code>. O primeiro CNPJ alfanumérico, da filial do Banco do Brasil, é desse tipo.</li>
+<li>Raiz alfanumérica: possível só em inscrições feitas a partir de julho de 2026, e mesmo assim não em todas.</li>
+</ol>
+<p>Além disso, o formato não depende só da data. Uma empresa aberta em outubro de 2026 pode receber um CNPJ só com números. Por isso, nenhuma regra do tipo "data de abertura depois de julho, então tem letra" faz sentido.</p>
+<h3>O dígito verificador em um parágrafo</h3>
+<p>O cálculo continua pelo módulo 11, com os mesmos pesos. Muda só o valor de cada caractere, que passa a ser o código ASCII menos 48. O '0' tem código 48 e vale 0; o '9' (57) vale 9. Ou seja, os dígitos continuam valendo o que sempre valeram, e as letras viram números a partir de 17 (A = 17, B = 18, C = 19). Por isso um CNPJ antigo dá o mesmo DV de antes, e uma única rotina valida os dois formatos. O passo a passo completo, com código, está no post sobre <a href="https://blog.hubdodesenvolvedor.com.br/como-validar-um-cnpj/">como validar um CNPJ</a>.</p>
+<h2>Banco de dados: como migrar a coluna para o CNPJ alfanumérico</h2>
+<p>O banco costuma ser o primeiro ponto de falha. Durante anos, guardar CNPJ como inteiro pareceu economia de espaço, e hoje essa escolha impede o <code>INSERT</code> do primeiro cliente com letra.</p>
+<p><img src="img/HUB-cnpj-alfanumerico-banco.webp" alt="Programador aponta para código na tela durante a migração do banco para o CNPJ alfanumérico" data-legenda="Colunas numéricas não guardam letras: a migração começa pelo esquema do banco."></p>
+<h3>Tipo de coluna: CHAR de 14 posições em vez de BIGINT</h3>
+<p>Qualquer tipo numérico (<code>INT</code>, <code>BIGINT</code>, <code>NUMERIC</code>, <code>DECIMAL</code>) rejeita o CNPJ alfanumérico. Esses tipos também já apagavam os zeros à esquerda. Um CNPJ que começava com <code>00</code> virava um número de 12 dígitos, e cada tela precisava completar com zeros para exibir.</p>
+<p>A opção mais direta é <code>CHAR(14)</code>, guardando só os caracteres, sem pontos, barra nem hífen. O tamanho é fixo, então <code>VARCHAR(14)</code> não traz vantagem. Use um conjunto de caracteres ASCII quando o banco permitir: em UTF-8 (utf8mb4 no MySQL), um <code>CHAR(14)</code> pode reservar até 56 bytes no índice, e o CNPJ não tem acento que justifique isso.</p>
+<h3>Índices, chaves estrangeiras e ordenação</h3>
+<p>Trocar o tipo da coluna principal não basta. O CNPJ costuma aparecer como chave estrangeira em pedidos, notas, contratos e logs. Cada uma dessas colunas precisa mudar junto. Senão o <code>JOIN</code> compara texto com número: o PostgreSQL recusa a consulta, e o MySQL converte em silêncio, deixa de usar o índice e pode juntar linhas erradas.</p>
+<p>A ordenação também muda. Quem decide é a collation, a regra que o banco usa para comparar e ordenar texto. Na collation binária, que compara byte a byte, os dígitos vêm antes das letras, seguindo a tabela ASCII. Em collation que ignora maiúsculas, <code>12abc...</code> e <code>12ABC...</code> passam a ser iguais na busca, o que esconde dado mal normalizado. Por isso, prefira collation binária e uma restrição <code>CHECK</code> que recuse minúsculas.</p>
+<p>O índice cresce um pouco, porque 14 bytes ocupam mais que os 8 de um <code>BIGINT</code>. Mesmo em tabelas de milhões de linhas, a diferença é pequena perto do custo de um cadastro que não grava.</p>
+<h3>Script de migração sem parar o sistema</h3>
+<p>A troca segura segue o padrão expandir e contrair (expand/contract): primeiro se amplia o esquema, depois se enxuga. O exemplo abaixo é para PostgreSQL:</p>
+<pre><code class="language-sql">-- 1. Coluna nova, convivendo com a antiga
+ALTER TABLE empresas ADD COLUMN cnpj_txt CHAR(14);
+
+-- 2. A partir daqui, a aplicação (ou um trigger) grava nas duas colunas
+
+-- 3. Copia o histórico em lotes, devolvendo os zeros à esquerda
+UPDATE empresas SET cnpj_txt = LPAD(cnpj::text, 14, '0')
+ WHERE id IN (SELECT id FROM empresas WHERE cnpj_txt IS NULL LIMIT 10000);
+-- repita até não sobrar linha
+
+-- 4. Regra de formato sem travar a tabela: cria e depois valida
+ALTER TABLE empresas ADD CONSTRAINT ck_cnpj_formato
+  CHECK (cnpj_txt ~ '^[A-Z0-9]{12}[0-9]{2}$') NOT VALID;
+ALTER TABLE empresas VALIDATE CONSTRAINT ck_cnpj_formato;
+
+-- 5. Índice único (CONCURRENTLY não roda dentro de transação)
+CREATE UNIQUE INDEX CONCURRENTLY ux_empresas_cnpj_txt ON empresas (cnpj_txt);
+</code></pre>
+<p>Depois do script, o restante acontece em versões da aplicação:</p>
+<ul>
+<li>as leituras e as chaves estrangeiras passam para <code>cnpj_txt</code>;</li>
+<li>a coluna antiga passa a aceitar <code>NULL</code>, porque um CNPJ com letra não cabe nela, e só então o sistema aceita o primeiro cliente alfanumérico;</li>
+<li>numa versão seguinte, a coluna antiga sai.</li>
+</ul>
+<p>No MySQL, a coluna nova fica como <code>CHAR(14) CHARACTER SET ascii COLLATE ascii_bin</code>.</p>
+<blockquote>
+<p><strong>Atenção:</strong> nunca converta o tipo sem o <code>LPAD</code>. Um <code>ALTER COLUMN ... TYPE text</code> direto no <code>BIGINT</code> guarda o número sem os zeros, e o CNPJ <code>00.394.460/0058-87</code> vira <code>394460005887</code>, que não passa em nenhuma validação.</p>
+</blockquote>
+<p>Se o seu sistema consulta dados cadastrais de clientes ou fornecedores, teste a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/cnpj/">API de CNPJ do Hub do Desenvolvedor</a>. Ela consulta os dados direto na Receita, sem captcha, devolve JSON ou XML e tem teste grátis de 3 dias, tempo suficiente para rodar a sua base migrada.</p>
+<h2>Validação, máscara e regex do CNPJ alfanumérico no código</h2>
+<p>Depois do banco, o problema migra para o código. Validadores, máscaras e regras de negócio foram escritos supondo 14 dígitos, e quase sempre essa suposição fica escondida num <code>\d</code>, num <code>int()</code> ou num campo numérico.</p>
+<h3>Regex do novo formato</h3>
+<p>A Nota Técnica Conjunta 2025.001, que atualizou os schemas XML da NF-e e dos demais documentos fiscais eletrônicos, trouxe a expressão oficial. Para o valor sem máscara, ela é esta:</p>
+<pre><code class="language-text">^[A-Z0-9]{12}[0-9]{2}$
+</code></pre>
+<p>Com máscara, a versão equivalente fica assim:</p>
+<pre><code class="language-text">^[A-Z0-9]{2}\.[A-Z0-9]{3}\.[A-Z0-9]{3}/[A-Z0-9]{4}-[0-9]{2}$
+</code></pre>
+<p>Procure no repositório por <code>\d{14}</code>, <code>[0-9]{14}</code> e <code>\d{2}\.\d{3}</code>. Cada ocorrência é um ponto que recusa o CNPJ alfanumérico. A regex confere só o formato; o DV continua precisando da validação completa.</p>
+<h3>Normalização: maiúsculas, sem máscara</h3>
+<p>O usuário vai digitar <code>12.abc.345/01de-35</code>, colar com espaço ou trazer de uma planilha. A regra mais segura é normalizar na entrada, antes de validar e gravar:</p>
+<pre><code class="language-python">import re
+
+FORMATO = re.compile(r&quot;[A-Z0-9]{12}[0-9]{2}&quot;)
+
+def normalizar_cnpj(valor: str) -&gt; str:
+    limpo = re.sub(r&quot;[.\-/\s]&quot;, &quot;&quot;, valor).upper()
+    if limpo.isdigit() and len(limpo) &lt; 14:
+        limpo = limpo.zfill(14)  # legado numerico sem zeros a esquerda
+    if not FORMATO.fullmatch(limpo):
+        raise ValueError(f&quot;CNPJ fora do formato: {valor!r}&quot;)
+    return limpo
+
+print(normalizar_cnpj(&quot;12.abc.345/01de-35&quot;))  # 12ABC34501DE35
+</code></pre>
+<p>O <code>zfill</code> só serve para dados antigos, que perderam os zeros num campo numérico. Um valor com letra nunca recebe preenchimento. Depois de normalizar, chame a função de DV. Com isso, a mesma rotina serve para formulário, importação e API.</p>
+<blockquote>
+<p><strong>Na prática:</strong> normalize em um único ponto do código e trate o CNPJ como texto opaco depois disso. Nunca faça conta com ele, nem <code>int(cnpj)</code> "só para comparar".</p>
+</blockquote>
+<h3>Máscara de input no front-end</h3>
+<p>Campos com <code>type="number"</code> ou <code>inputmode="numeric"</code> abrem o teclado numérico no celular. Com isso, o usuário não consegue digitar letras. Troque por <code>type="text"</code>, com <code>autocapitalize="characters"</code>, e aplique a máscara por posição:</p>
+<pre><code class="language-javascript">function mascararCnpj(valor) {
+  const v = valor.toUpperCase().replace(/[^A-Z0-9]/g, &quot;&quot;).slice(0, 14);
+  let saida = v.slice(0, 2);
+  if (v.length &gt; 2) saida += &quot;.&quot; + v.slice(2, 5);
+  if (v.length &gt; 5) saida += &quot;.&quot; + v.slice(5, 8);
+  if (v.length &gt; 8) saida += &quot;/&quot; + v.slice(8, 12);
+  if (v.length &gt; 12) saida += &quot;-&quot; + v.slice(12, 14);
+  return saida;
+}
+
+mascararCnpj(&quot;12abc34501de35&quot;); // &quot;12.ABC.345/01DE-35&quot;
+</code></pre>
+<p>Bibliotecas de máscara com padrão <code>00.000.000/0000-00</code> também bloqueiam letras. Em geral, o token <code>0</code> aceita só dígito. Troque pelo token alfanumérico da biblioteca nas 12 primeiras posições. No jQuery Mask Plugin, por exemplo, o padrão vira <code>AA.AAA.AAA/AAAA-00</code>: o <code>A</code> aceita letra ou número, e o <code>0</code> continua só dígito nos dois DVs.</p>
+<h3>Regras de negócio escondidas no número</h3>
+<p>Alguns sistemas tiram conclusões do CNPJ. Dois casos merecem revisão. O primeiro é a regra "ordem 0001 é matriz", que fica ainda mais frágil agora que a ordem também pode ter letras. De acordo com a Receita, o 0001 indica a matriz só na geração, e uma filial pode virar estabelecimento principal depois. Para saber quem é matriz, use o dado cadastral, não o sufixo.</p>
+<p>O segundo é agrupar filiais pela raiz com conta aritmética, como <code>cnpj // 1000000</code>. Com letras, a raiz é simplesmente <code>cnpj[:8]</code>, desde que o valor já esteja normalizado, sem pontos e barra. Funciona nos dois formatos e não depende de tipo numérico.</p>
+<p><img src="img/HUB-cnpj-alfanumerico-diagrama.webp" alt="Fluxograma do tratamento do CNPJ alfanumérico: entrada, normalização, regex, validação do DV e gravação como texto de 14 posições" data-legenda="Um único caminho para qualquer entrada: normalizar, conferir o formato, validar o DV e gravar como texto."></p>
+<h2>Integrações, NF-e e SPED com o CNPJ alfanumérico</h2>
+<p>Um sistema adaptado por dentro ainda pode falhar na borda. Toda troca de dados com parceiros, Secretarias da Fazenda (SEFAZ) e contabilidade precisa ser revista.</p>
+<h3>APIs de terceiros e contratos de integração</h3>
+<p>O erro mais comum é o CNPJ trafegando como número no JSON, por exemplo <code>"cnpj": 11222333000181</code>. Um CNPJ com letra não cabe num número JSON: o serializador falha, ou o parceiro que espera inteiro recusa a mensagem. Revise os contratos com gateways de pagamento, bancos, marketplaces, ERP (sistema de gestão empresarial) e transportadoras. O campo deve ser string.</p>
+<p>Escreva testes de contrato que mandem um CNPJ alfanumérico real de homologação. Se o parceiro recusar, você descobre no ambiente de teste e não no primeiro pedido de um cliente novo. Para consultas cadastrais, o guia de <a href="https://blog.hubdodesenvolvedor.com.br/api-de-consulta-de-cnpj/">API de consulta de CNPJ</a> mostra como integrar e guardar a resposta.</p>
+<p>O mesmo vale para o Pix. Segundo as perguntas e respostas da Receita, o CNPJ alfanumérico pode ser chave; se o seu sistema cadastra ou valida chave Pix do tipo CNPJ, a regra de formato precisa ser a mesma do cadastro.</p>
+<h3>NF-e: campos de CNPJ, chave de acesso e DANFE</h3>
+<p>Na NF-e (Nota Fiscal Eletrônica), o CNPJ aparece em vários campos: emitente, destinatário, transportador e autorizados a baixar o XML. A Nota Técnica Conjunta 2025.001 mudou a regex desses campos para <code>[A-Z0-9]{12}[0-9]{2}</code>. A mudança vale para os documentos coordenados pelo ENCAT (Encontro Nacional de Coordenadores e Administradores Tributários Estaduais), como NF-e, NFC-e (Nota Fiscal de Consumidor Eletrônica), CT-e (Conhecimento de Transporte Eletrônico) e MDF-e (Manifesto Eletrônico de Documentos Fiscais).</p>
+<p>A chave de acesso de 44 posições carrega o CNPJ do emitente nas posições 7 a 20, e as 12 primeiras delas (7 a 18) passaram a aceitar letras; e o DV da chave agora usa a mesma regra do ASCII menos 48. O post sobre <a href="https://blog.hubdodesenvolvedor.com.br/chave-de-acesso-nfe/">chave de acesso da NF-e</a> traz o cálculo atualizado. Quem guarda a chave em coluna numérica precisa migrar para <code>CHAR(44)</code>.</p>
+<p><img src="img/HUB-cnpj-alfanumerico-nfe.webp" alt="Nota fiscal impressa com código de barras sobre a mesa ao lado de uma calculadora" data-legenda="O CNPJ com letras entra na chave de acesso e muda até o código de barras impresso no DANFE."></p>
+<p>O DANFE (Documento Auxiliar da NF-e) também precisa de ajuste. O código de barras usava o CODE-128C, uma variante que agrupa os dígitos de dois em dois, mas não aceita letras. A nota técnica sugere alternar para o CODE-128A, que aceita maiúsculas, só no trecho com letra. Na prática, o código de barras fica mais longo e pode não caber no layout antigo; se você gera o DANFE com biblioteca própria, imprima um teste com emitente alfanumérico.</p>
+<h3>SPED, EFD e obrigações acessórias</h3>
+<p>Os arquivos do SPED (Sistema Público de Escrituração Digital), como a EFD (Escrituração Fiscal Digital) ICMS IPI e a EFD-Contribuições, levam CNPJ em vários registros. Se o seu gerador formatar o campo como número ou cortar zeros, o arquivo deixa de bater com o cadastro e tende a ser recusado na validação. As obrigações acessórias, que são as declarações e arquivos que a empresa entrega ao Fisco além de pagar o imposto, são justamente onde a Receita aponta o impacto do novo formato.</p>
+<p>Confira três pontos no gerador de arquivos. Primeiro, se o campo sai como texto de 14 posições. Segundo, se a validação interna aceita letras. Terceiro, se nenhum relatório ou planilha de conferência gerada para o contador transforma o CNPJ em número no caminho.</p>
+<h3>Planilhas e CSV que comem zeros e letras</h3>
+<p>O Excel e o Google Planilhas tratam <code>00394460005887</code> como número e removem os zeros. Com o CNPJ alfanumérico, há outro risco: o <code>1234567E000184</code> é lido como notação científica (1234567 × 10^184) e a célula exibe <code>1,23E+190</code>. O CNPJ original se perde sem aviso.</p>
+<p>Na exportação, prefira XLSX com a coluna marcada como texto, ou JSON; em CSV, avise quem vai abrir que a coluna deve ser importada como texto. Na importação, nunca confie no tipo inferido. Passe tudo pela função de normalização e recuse o que não fechar o formato.</p>
+<p>Para resumir o que muda em cada camada:</p>
+<table>
+<thead>
+<tr>
+<th>Camada</th>
+<th>Antes (só números)</th>
+<th>Depois (CNPJ alfanumérico)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Banco de dados</td>
+<td><code>BIGINT</code> ou <code>NUMERIC</code>, zeros perdidos</td>
+<td><code>CHAR(14)</code> ASCII, collation binária, <code>CHECK</code></td>
+</tr>
+<tr>
+<td>Validação</td>
+<td><code>\d{14}</code> e DV com <code>int(c)</code></td>
+<td><code>[A-Z0-9]{12}[0-9]{2}</code> e DV com ASCII menos 48</td>
+</tr>
+<tr>
+<td>Front-end</td>
+<td><code>type="number"</code>, teclado numérico</td>
+<td><code>type="text"</code>, maiúsculas automáticas</td>
+</tr>
+<tr>
+<td>Integrações e APIs</td>
+<td>CNPJ como número no JSON</td>
+<td>CNPJ sempre como string</td>
+</tr>
+<tr>
+<td>NF-e</td>
+<td>Chave de acesso só numérica, CODE-128C</td>
+<td>Letras nas posições 7 a 18, código de barras híbrido</td>
+</tr>
+<tr>
+<td>Planilhas e CSV</td>
+<td>Zeros à esquerda somem</td>
+<td>Zeros somem e letras viram notação científica</td>
+</tr>
+</tbody>
+</table>
+<p>A API de CNPJ do Hub do Desenvolvedor faz parte de um plano que inclui também consultas de CPF, CEP e frete, entre mais de 20 APIs, sem limite de IPs. Se a sua integração ainda depende de raspar o portal da Receita, vale <a href="https://www.hubdodesenvolvedor.com.br/detalhes/cnpj/">testar a consulta de CNPJ por API</a> antes de reescrever o conector para o formato novo.</p>
+<h2>Massa de teste: gerador de CNPJ alfanumérico e checklist de migração</h2>
+<p>Para fechar a migração, faltam dados de teste. Os CNPJs alfanuméricos de verdade ainda são poucos, e usar dados de empresas reais em homologação traz risco de privacidade. A solução é gerar números fictícios válidos.</p>
+<h3>O Simulador Nacional de CNPJ da Receita</h3>
+<p>A Receita publicou o <a href="https://servicos.receitafederal.gov.br/servico/cnpj-alfa/simular">Simulador Nacional de CNPJ</a>, um gerador de CNPJ alfanumérico gratuito. Ele cria até 1.000 CNPJs fictícios por usuário, de matriz e de filial, nos formatos numérico e alfanumérico. Também valida um número informado e guarda o histórico.</p>
+<p>Segundo a Receita, o simulador roda no navegador e funciona até sem conexão depois de carregado. Os números servem só para teste, o que ajuda a cumprir a LGPD (Lei Geral de Proteção de Dados). A Receita também publicou um manual e arquivos de referência para o cálculo do DV na <a href="https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/documentos-tecnicos/cnpj">página de documentos técnicos do CNPJ</a>.</p>
+<h3>Um gerador de CNPJ alfanumérico no próprio teste</h3>
+<p>Para testes automatizados, gerar no código é mais prático. O exemplo abaixo reaproveita a função de DV que você já tem no projeto, como a do post sobre validação, e sorteia as 12 primeiras posições:</p>
+<pre><code class="language-python">import random
+import string
+
+from validacao import calcular_dv  # recebe 12 caracteres, devolve os 2 DVs como str (ex.: &quot;35&quot;)
+
+ALFABETO = string.digits + string.ascii_uppercase
+
+def gerar_cnpj_alfanumerico(rng=random):
+    while True:
+        base = &quot;&quot;.join(rng.choice(ALFABETO) for _ in range(12))
+        if base != &quot;0&quot; * 12:  # recusa a base toda zero
+            return base + calcular_dv(base)
+
+def gerar_massa(qtd=1000, semente=42):
+    rng = random.Random(semente)  # semente fixa: massa reproduzivel
+    return [gerar_cnpj_alfanumerico(rng) for _ in range(qtd)]
+</code></pre>
+<p>Com a semente fixa, a massa é sempre a mesma: se um teste falhar, ele falha de novo com o mesmo CNPJ, o que facilita a depuração. Inclua também casos de borda escritos à mão: as 12 primeiras posições só com letras, tudo número, letras apenas na ordem e CNPJ antigo com zeros à esquerda.</p>
+<blockquote>
+<p><strong>Na prática:</strong> confira o DV de qualquer exemplo copiado de documentação antes de usá-lo como caso de teste. O <code>12.ABC.345/01DE-35</code> da Receita confere. Já o exemplo <code>AA.345.678/0003-29</code>, das perguntas e respostas da Receita, não fecha: pelo algoritmo oficial, os DVs corretos seriam 86, e não 29. Usado como caso válido, ele faria o teste acusar erro num validador que está certo.</p>
+</blockquote>
+<h3>Checklist de migração por componente</h3>
+<table>
+<thead>
+<tr>
+<th>Componente</th>
+<th>O que verificar</th>
+<th>Teste mínimo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Esquema do banco</td>
+<td>Colunas, chaves estrangeiras e índices com CNPJ ou chave de acesso</td>
+<td>Inserir <code>12ABC34501DE35</code> em todas as tabelas</td>
+</tr>
+<tr>
+<td>Validação</td>
+<td>Regex, DV com ASCII menos 48, normalização para maiúsculas</td>
+<td>Aceitar <code>12.abc.345/01de-35</code> e recusar DV errado</td>
+</tr>
+<tr>
+<td>Front-end</td>
+<td><code>type</code> do campo, teclado no celular, biblioteca de máscara</td>
+<td>Digitar uma letra num celular Android e num iPhone</td>
+</tr>
+<tr>
+<td>Regras de negócio</td>
+<td>Matriz pelo 0001, raiz por divisão, conversões para número</td>
+<td>Filial alfanumérica de raiz numérica</td>
+</tr>
+<tr>
+<td>Integrações</td>
+<td>Tipo do campo nos contratos, parsers e webhooks</td>
+<td>Teste de contrato com CNPJ alfanumérico</td>
+</tr>
+<tr>
+<td>Documentos fiscais</td>
+<td>XML, chave de acesso, DANFE e arquivos do SPED</td>
+<td>Emitir em homologação com emitente alfanumérico</td>
+</tr>
+<tr>
+<td>Planilhas e relatórios</td>
+<td>Importação, exportação e formatação de colunas</td>
+<td>Ida e volta por CSV sem perder caracteres</td>
+</tr>
+</tbody>
+</table>
+<p><img src="img/HUB-cnpj-alfanumerico-testes.webp" alt="Programadora executa testes automatizados no notebook com o terminal aberto" data-legenda="Massa de teste fictícia e reproduzível evita surpresas com o primeiro cliente de CNPJ alfanumérico."></p>
+<h2>Perguntas frequentes sobre o CNPJ alfanumérico</h2>
+<h3>Quando começou o CNPJ alfanumérico?</h3>
+<p>A Instrução Normativa RFB 2.229/2024 previu a implementação a partir de julho de 2026. Pelo cronograma da Receita, os sistemas entraram em produção em 27 de julho de 2026 e o primeiro CNPJ alfanumérico foi atribuído em 31 de julho de 2026.</p>
+<h3>Meu CNPJ atual vai mudar?</h3>
+<p>Não. Os CNPJs existentes continuam com o mesmo número e o mesmo dígito verificador, sem recadastramento. O formato alfanumérico vale só para novas inscrições, inclusive filiais novas de empresas que já existem.</p>
+<h3>Quais caracteres o CNPJ alfanumérico aceita?</h3>
+<p>As 12 primeiras posições aceitam números de 0 a 9 e letras maiúsculas de A a Z. As duas últimas, que são os dígitos verificadores, continuam numéricas. A Receita orienta que os sistemas aceitem todas as letras.</p>
+<h3>Existe um gerador de CNPJ alfanumérico oficial?</h3>
+<p>Sim. A Receita disponibiliza o Simulador Nacional de CNPJ, que gera até 1.000 CNPJs fictícios por usuário, de matriz e de filial, e valida números informados. Os números servem só para testes.</p>
+<h3>Qual é um CNPJ alfanumérico exemplo válido para testes?</h3>
+<p>O exemplo usado pela Receita é 12.ABC.345/01DE-35, que sem máscara fica 12ABC34501DE35. Ele é fictício e tem os dígitos verificadores corretos pelo cálculo oficial.</p>
+<h3>Posso guardar o CNPJ alfanumérico em coluna numérica?</h3>
+<p>Não. Tipos como INT, BIGINT e NUMERIC não aceitam letras e, mesmo antes, já apagavam os zeros à esquerda. Use uma coluna CHAR de 14 posições, sem máscara, com uma restrição que aceite letras maiúsculas e números nas 12 primeiras posições e só números nas duas últimas.</p>
+<h2>Resumo para colocar em produção</h2>
+<p>Para adaptar o sistema ao CNPJ alfanumérico 2026, migre colunas para <code>CHAR(14)</code>, normalize a entrada para maiúsculas sem máscara e troque <code>\d{14}</code> pela nova regex. Depois, valide o DV com ASCII menos 48, revise contratos de integração e gere massa de teste fictícia. Nenhum desses passos é grande, mas basta esquecer um para o erro aparecer no cadastro do primeiro cliente novo.</p>
+<p>Os dois formatos vão conviver por muitos anos, então a meta é tratar o CNPJ como texto em todo o sistema, do formulário ao arquivo do SPED.</p>
+<p>Para validar a base migrada contra dados reais da Receita, crie sua conta e use a <a href="https://www.hubdodesenvolvedor.com.br/detalhes/cnpj/">API de consulta de CNPJ do Hub do Desenvolvedor</a>. Ela traz os dados cadastrais completos da empresa, direto da Receita. Confira no painel os campos da resposta e aproveite o teste grátis de 3 dias.</p>
+</article>
+</body>
+</html>
